@@ -4,8 +4,6 @@ import java.util.logging.Logger
 import javax.net.ssl._
 
 
-import collection.mutable.{Map => MutableMap}
-
 /*
  * SSL helper object, capable of creating cached SSLEngine instances
  * backed by both the native APR/OpenSSL bindings, or pure Java JSSE.
@@ -22,7 +20,7 @@ object Ssl {
    * @param caCertPath The path to the optional PEM encoded CA cert
    *   file. [JSSE: If caCertPath is set, it should contain the
    *   certificate and will be used in place of certificatePath.]
-   * @param cipherSpec [OpenSSL] The cipher spec
+   * @param ciphers [OpenSSL] The ciphers spec
    * @throws RuntimeException if no provider could be initialized
    * @return an SSLEngine
    */
@@ -65,7 +63,7 @@ object Ssl {
   def client(): Engine = JSSE.client()
 
   /**
-   * Get a client engine, from the given context
+   * Get a client engine from the given context
    */
   def client(sslContext : SSLContext): Engine = JSSE.client(sslContext)
 
@@ -76,4 +74,22 @@ object Ssl {
    */
   def clientWithoutCertificateValidation(): Engine =
     JSSE.clientWithoutCertificateValidation()
+
+  /**
+   * Get a client engine
+   */
+  def client(peerHost: String, peerPort: Int): Engine = JSSE.client(peerHost, peerPort)
+
+  /**
+   * Get a client engine from the given context
+   */
+  def client(sslContext: SSLContext, peerHost: String, peerPort: Int): Engine = JSSE.client(sslContext, peerHost, peerPort)
+
+  /**
+   * Get a client engine that doesn't check the validity of certificates
+   *
+   * N.B.: This is probably a bad idea for anything but testing!
+   */
+  def clientWithoutCertificateValidation(peerHost: String, peerPort: Int): Engine =
+    JSSE.clientWithoutCertificateValidation(peerHost, peerPort)
 }

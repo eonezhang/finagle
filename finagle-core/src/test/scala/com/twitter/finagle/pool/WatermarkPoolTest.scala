@@ -2,6 +2,7 @@ package com.twitter.finagle.pool
 
 import com.twitter.conversions.time._
 import com.twitter.finagle._
+import com.twitter.finagle.stats.InMemoryStatsReceiver
 import com.twitter.util.{Await, Future, Promise, Return, Throw, Time}
 import org.junit.runner.RunWith
 import org.mockito.Matchers.any
@@ -9,6 +10,7 @@ import org.mockito.Mockito.{never, times, verify, when}
 import org.scalatest.FunSpec
 import org.scalatest.junit.JUnitRunner
 import org.scalatest.mock.MockitoSugar
+import scala.language.reflectiveCalls
 
 @RunWith(classOf[JUnitRunner])
 class WatermarkPoolTest extends FunSpec with MockitoSugar {
@@ -18,13 +20,13 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       when(factory.close(any[Time])).thenReturn(Future.Done)
       val pool = new WatermarkPool(factory, 0)
 
-      when(factory.isAvailable).thenReturn(true)
+      when(factory.status).thenReturn(Status.Open)
       assert(pool.isAvailable)
-      verify(factory).isAvailable
+      verify(factory).status
 
-      when(factory.isAvailable).thenReturn(false)
+      when(factory.status).thenReturn(Status.Closed)
       assert(!pool.isAvailable)
-      verify(factory, times(2)).isAvailable
+      verify(factory, times(2)).status
     }
   }
 
@@ -37,7 +39,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       val promise = new Promise[Service[Int, Int]]
 
       when(factory()).thenReturn(promise)
-      when(service.isAvailable).thenReturn(true)
+      when(service.status).thenReturn(Status.Open)
       when(service(123)).thenReturn(Future.value(321))
       val pool = new WatermarkPool(factory, 0)
     }
@@ -49,7 +51,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         verify(factory)()
         promise() = Return(service)
         assert(f.isDefined)
-        assert(Await.result(Await.result(f)(123)) === 321)
+        assert(Await.result(Await.result(f)(123)) == 321)
       }
     }
 
@@ -58,7 +60,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         promise() = Return(service)
         val f = Await.result(pool())
         f.close()
-        verify(service).isAvailable
+        verify(service).status
         verify(service).close(any[Time])
       }
     }
@@ -74,7 +76,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       when(service0.close(any[Time])).thenReturn(Future.Done)
 
       when(factory()).thenReturn(Future.value(service0))
-      when(service0.isAvailable).thenReturn(true)
+      when(service0.status).thenReturn(Status.Open)
 
       val pool = new WatermarkPool(factory, 1, 1)
     }
@@ -92,7 +94,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         Await.result(f0).close()
 
         assert(f1.isDefined)
-        verify(service0).isAvailable
+        verify(service0).status
         verify(service0, never()).close(any[Time])
       }
     }
@@ -116,10 +118,10 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         when(factory()).thenReturn(Future.value(service0))
         val exc = new Exception
         p() = Throw(exc)
-        assert(f0.poll === Some(Throw(exc)))
+        assert(f0.poll == Some(Throw(exc)))
 
         verify(factory, times(2))()
-        assert(f1.poll === Some(Return(service0)))
+        assert(f1.poll == Some(Return(service0)))
       }
     }
 
@@ -134,7 +136,9 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         val cause = new Exception
         f1.raise(cause)
         assert(f1.isDefined)
-        intercept[CancelledConnectionException] { Await.result(f1) }
+        val failure = intercept[Failure] { Await.result(f1) }
+        assert(failure.getCause.isInstanceOf[CancelledConnectionException])
+        assert(failure.isFlagged(Failure.Interrupted))
       }
     }
 
@@ -142,13 +146,13 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       new WatermarkPoolLowOneHighOne {
         val f0 = pool()
         assert(f0.isDefined)
-        Await.result(f0).close()  // give it back
-        verify(service0, never()).close(any[Time])  // it retained
+        Await.result(f0).close() // give it back
+        verify(service0, never()).close(any[Time]) // it retained
 
         val service1 = mock[Service[Int, Int]]
         when(service1.close(any[Time])).thenReturn(Future.Done)
         when(factory()).thenReturn(Future.value(service1))
-        when(service0.isAvailable).thenReturn(false)
+        when(service0.status).thenReturn(Status.Closed)
 
         val f1 = pool()
         verify(service0).close(any[Time])
@@ -171,21 +175,21 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         assert(!f1.isDefined)
 
         when(factory()).thenReturn(service1Promise)
-        when(service0.isAvailable).thenReturn(false)
-        when(service1.isAvailable).thenReturn(true)
+        when(service0.status).thenReturn(Status.Closed)
+        when(service1.status).thenReturn(Status.Open)
 
         // "make a new item"
         service1Promise() = Return(service1)
         Await.result(f0).close()
         verify(service0).close(any[Time])
-        verify(service0).isAvailable
+        verify(service0).status
         assert(f1.isDefined)
         verify(factory, times(2))()
-        assert(Await.result(Await.result(f1)(123)) === 111)
+        assert(Await.result(Await.result(f1)(123)) == 111)
 
         // Healthy again:
         Await.result(f1).close()
-        verify(service1).isAvailable
+        verify(service1).status
         // No additional disposes.
         verify(service1, never()).close(any[Time])
       }
@@ -197,14 +201,18 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
     when(factory.close(any[Time])).thenReturn(Future.Done)
     val service0 = mock[Service[Int, Int]]
     when(service0.close(any[Time])).thenReturn(Future.Done)
-    val promise = new Promise[Service[Int, Int]]
 
     when(factory()).thenReturn(Future.value(service0))
-    when(service0.isAvailable).thenReturn(true)
+    when(service0.status).thenReturn(Status.Open)
 
-    val pool = new WatermarkPool(factory, 1, 1, maxWaiters = 2)
+    val statsRecv = new InMemoryStatsReceiver
+    val pool = new WatermarkPool(factory, 1, 1, statsRecv, maxWaiters = 2)
+    def numWaited() = statsRecv.counter("pool_num_waited")()
+    def numTooManyWaiters() = statsRecv.counter("pool_num_too_many_waiters")()
 
     it("should throw TooManyWaitersException when the number of waiters exceeds 2") {
+      assert(0 == numWaited())
+      assert(0 == numTooManyWaiters())
       val f0 = pool()
       assert(f0.isDefined)
       verify(factory)()
@@ -212,21 +220,27 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       // one waiter. this is cool.
       val f1 = pool()
       assert(!f1.isDefined)
+      assert(1 == numWaited())
+      assert(0 == numTooManyWaiters())
 
       // two waiters. this is *still* cool.
       val f2 = pool()
       assert(!f2.isDefined)
+      assert(2 == numWaited())
+      assert(0 == numTooManyWaiters())
 
       // three waiters and i freak out.
       val f3 = pool()
       assert(f3.isDefined)
       intercept[TooManyWaitersException] { Await.result(f3) }
+      assert(2 == numWaited())
+      assert(1 == numTooManyWaiters())
 
       // give back my original item, and f1 should still get something.
       Await.result(f0).close()
 
       assert(f1.isDefined)
-      verify(service0).isAvailable
+      verify(service0).status
       verify(service0, never()).close(any[Time])
     }
   }
@@ -253,12 +267,12 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       // give them all back, and all should persist.
       mocks foreach { service =>
         verify(service, never()).close(any[Time])
-        when(service.isAvailable).thenReturn(true)
+        when(service.status).thenReturn(Status.Open)
       }
 
       mocks zip services foreach { case (mock, service) =>
         service.close()
-        verify(mock).isAvailable
+        verify(mock).status
         verify(mock, never()).close(any[Time])
       }
     }
@@ -268,7 +282,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       // creation.
       0 until 100 foreach { _ => Await.result(pool()) }
       mocks foreach { service =>
-        verify(service, times(2)).isAvailable
+        verify(service, times(2)).status
       }
 
       verify(factory, times(100))()
@@ -283,7 +297,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
     when(factory.close(any[Time])).thenReturn(Future.Done)
     val service = mock[Service[Int, Int]]
     when(service.close(any[Time])).thenReturn(Future.Done)
-    when(service.isAvailable).thenReturn(true)
+    when(service.status).thenReturn(Status.Open)
     when(service(123)).thenReturn(Future.value(321))
     val highWaterMark = 5
     val pool = new WatermarkPool(factory, 1, highWaterMark)
@@ -302,7 +316,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         val promise = new Promise[Service[Int, Int]]
         when(factory()).thenReturn(promise)
         promise() = Return(service)
-        assert(Await.result(pool(), 1.second).isAvailable)
+        assert(Await.result(pool(), 1.second).status == Status.Open)
       }
     }
 
@@ -316,14 +330,14 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         val f = pool()
         verify(factory)()
         assert(f.isDefined)
-        assert(Await.result(f).isAvailable)
+        assert(Await.result(f).status == Status.Open)
 
 
         Await.result(f).close()
         verify(service, never()).close(any[Time])
 
         when(factory()).thenReturn(new Promise[Service[Int, Int]])
-        when(service.isAvailable).thenReturn(false)
+        when(service.status).thenReturn(Status.Closed)
 
         // The service is now unhealty, so it should be discarded, and a
         // new one should be made.
@@ -349,10 +363,10 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         f.raise(exc)
         assert(f.isDefined)
         f onFailure {
-          case WriteException(e) => assert(e === exc)
+          case WriteException(e) => assert(e == exc)
           case _ => assert(false, "expecting a WriteException, gets something else")
         }
-        assert(slowService.interrupted === None)
+        assert(slowService.interrupted == None)
 
         slowService.setValue(service)
         verify(service, never()).close(any[Time])
@@ -360,7 +374,7 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
         val f1 = pool()
         verify(factory)()
         assert(f1.isDefined)
-        assert(Await.result(Await.result(f1)(123)) === 321)
+        assert(Await.result(Await.result(f1)(123)) == 321)
       }
     }
 
@@ -372,14 +386,14 @@ class WatermarkPoolTest extends FunSpec with MockitoSugar {
       val maxWaiters = 3
       val pool = new WatermarkPool(factory, lowWatermark, highWatermark, maxWaiters = maxWaiters)
 
-      val services = 0 until highWatermark map { _=>
+      val services = 0 until highWatermark map { _ =>
         new Promise[Service[Int, Int]]
       }
       val wrappedServices = services map { s =>
         when(factory()).thenReturn(s)
         pool()
       }
-      val waiters = 0 until maxWaiters map { _=> pool() }
+      0 until maxWaiters map { _ => pool() }
       val f = pool()
       assert(f.isDefined)
       intercept[TooManyWaitersException] { Await.result(f) }

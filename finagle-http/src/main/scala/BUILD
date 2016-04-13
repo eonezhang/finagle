@@ -1,12 +1,18 @@
 scala_library(name='scala',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-http',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:commons-lang'),
-    pants('3rdparty:guava'),
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('util/util-logging'),
-    pants('util/util-codec'),
-    pants('util/util-core'),
+    '3rdparty/jvm/com/google/guava',
+    '3rdparty/jvm/com/twitter/bijection:core',
+    '3rdparty/jvm/commons-lang',
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'util/util-codec',
+    'util/util-core',
+    'util/util-logging',
   ],
-  sources=rglobs('*.scala')
+  sources=rglobs('*.scala'),
 )

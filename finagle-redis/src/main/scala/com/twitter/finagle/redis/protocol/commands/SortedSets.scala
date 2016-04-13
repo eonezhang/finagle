@@ -327,7 +327,7 @@ object ZUnionStore extends ZStoreCompanion {
 
 case class ZRangeResults(entries: Array[ChannelBuffer], scores: Array[Double]) {
   def asTuples(): Seq[(ChannelBuffer, Double)] =
-    (entries, scores).zipped map { (entry, score) => (entry, score) } toSeq
+    (entries, scores).zipped.map { (entry, score) => (entry, score) }.toSeq
 }
 object ZRangeResults {
   def apply(tuples: Seq[(ChannelBuffer, ChannelBuffer)]): ZRangeResults = {
@@ -694,10 +694,10 @@ trait ZRangeCmdCompanion {
     RequireClientProtocol(
       args != null && args.length >= 3,
       "Expected at least 3 arguments for command")
-    
+
     val key = ChannelBuffers.wrappedBuffer(args.head)
     val rest = BytesToString.fromList(args.tail)
-    
+
     rest match {
       case start :: stop :: Nil =>
         get(key, safeLong(start), safeLong(stop), None)

@@ -1,10 +1,11 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:scalatest'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-mdns'),
-    pants('util/util-core'),
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/scalatest',
+    'finagle/finagle-core',
+    'finagle/finagle-mdns',
+    'util/util-core',
   ],
+  fatal_warnings=True,
   sources=rglobs('*.scala')
 )

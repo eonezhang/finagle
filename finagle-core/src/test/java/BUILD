@@ -1,8 +1,9 @@
-java_library(name='java',
+junit_tests(name='java',
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('util/util-core'),
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'util/util-core',
   ],
   sources=rglobs('*.java'),
 )

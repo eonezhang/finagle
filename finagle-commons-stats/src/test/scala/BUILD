@@ -1,8 +1,9 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:specs'),
-    pants('finagle/finagle-commons-stats')
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/scalatest',
+    'finagle/finagle-commons-stats'
   ],
+  fatal_warnings=True,
   sources=rglobs('*.scala')
 )

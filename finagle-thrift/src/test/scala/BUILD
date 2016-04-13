@@ -1,17 +1,26 @@
 junit_tests(name='scala',
   dependencies=[
-    jar(org='silly', name='silly-thrift', rev='0.5.0'),
-    pants('3rdparty:junit'),
-    pants('3rdparty:mockito-all'),
-    pants('3rdparty:netty'),
-    pants('3rdparty:scalatest'),
-    pants('3rdparty:specs'),
-    pants('3rdparty:thrift-0.5.0'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-test'),
-    pants('finagle/finagle-thrift'),
-    pants('finagle/finagle-thrift/src/test/java'),
-    pants('util/util-core'),
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/mockito:mockito-all',
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/scalatest',
+    '3rdparty/jvm/org/apache/thrift:thrift-0.5.0',
+    'finagle/finagle-core',
+    'finagle/finagle-thrift',
+    'finagle/finagle-thrift/src/test/java',
+    'finagle/finagle-thrift/src/test/thrift',
+    'util/util-core',
+
+    ':silly-thrift-dep',
+  ],
+  resources=[
+    'finagle/finagle-thrift/src/test/resources',
   ],
   sources=rglobs('*.scala')
+)
+
+jar_library(name='silly-thrift-dep',
+  jars=[
+    jar(org='silly', name='silly-thrift', rev='0.5.0'),
+  ],
 )

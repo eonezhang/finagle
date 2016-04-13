@@ -3,7 +3,7 @@ package com.twitter.finagle.redis.protocol
 import com.twitter.finagle.redis.ClientError
 import com.twitter.finagle.redis.protocol.commands._
 import com.twitter.finagle.redis.util._
-import org.jboss.netty.util.CharsetUtil
+import com.twitter.io.Charsets
 
 object RequireClientProtocol extends ErrorConversion {
   override def getException(msg: String) = new ClientError(msg)
@@ -16,10 +16,12 @@ abstract class Command extends RedisMessage {
 object Commands {
   // Key Commands
   val DEL       = "DEL"
+  val DUMP      = "DUMP"
   val EXISTS    = "EXISTS"
   val EXPIRE    = "EXPIRE"
   val EXPIREAT  = "EXPIREAT"
   val KEYS      = "KEYS"
+  val MOVE      = "MOVE"
   val PERSIST   = "PERSIST"
   val PEXPIRE   = "PEXPIRE"
   val PEXPIREAT = "PEXPIREAT"
@@ -80,6 +82,7 @@ object Commands {
   val BRANGE            = "BRANGE"
 
   // Miscellaneous
+  val FLUSHALL          = "FLUSHALL"
   val FLUSHDB           = "FLUSHDB"
   val SELECT            = "SELECT"
   val AUTH              = "AUTH"
@@ -90,6 +93,7 @@ object Commands {
 
   // Hash Sets
   val HDEL              = "HDEL"
+  val HEXISTS           = "HEXISTS"
   val HGET              = "HGET"
   val HGETALL           = "HGETALL"
   val HINCRBY           = "HINCRBY"
@@ -122,6 +126,8 @@ object Commands {
   val SCARD             = "SCARD"
   val SREM              = "SREM"
   val SPOP              = "SPOP"
+  val SRANDMEMBER       = "SRANDMEMBER"
+  val SINTER            = "SINTER"
 
   // Transactions
   val DISCARD           = "DISCARD"
@@ -130,13 +136,20 @@ object Commands {
   val UNWATCH           = "UNWATCH"
   val WATCH             = "WATCH"
 
+  // HyperLogLogs
+  val PFADD             = "PFADD"
+  val PFCOUNT           = "PFCOUNT"
+  val PFMERGE           = "PFMERGE"
+
   val commandMap: Map[String, Function1[List[Array[Byte]],Command]] = Map(
     // key commands
     DEL               -> {Del(_)},
+    DUMP              -> {Dump(_)},
     EXISTS            -> {Exists(_)},
     EXPIRE            -> {Expire(_)},
     EXPIREAT          -> {ExpireAt(_)},
     KEYS              -> {Keys(_)},
+    MOVE              -> {Move(_)},
     PERSIST           -> {Persist(_)},
     PEXPIRE           -> {PExpire(_)},
     PEXPIREAT         -> {PExpireAt(_)},
@@ -196,6 +209,7 @@ object Commands {
     BGET              -> {BGet(_)},
 
     // miscellaneous
+    FLUSHALL          -> {_ => FlushAll},
     FLUSHDB           -> {_ => FlushDB},
     SELECT            -> {Select(_)},
     AUTH              -> {Auth(_)},
@@ -206,6 +220,7 @@ object Commands {
 
     // hash sets
     HDEL              -> {HDel(_)},
+    HEXISTS           -> {HExists(_)},
     HGET              -> {HGet(_)},
     HGETALL           -> {HGetAll(_)},
     HINCRBY           -> {HIncrBy(_)},
@@ -237,13 +252,20 @@ object Commands {
     SCARD             -> {SCard(_)},
     SREM              -> {SRem(_)},
     SPOP              -> {SPop(_)},
+    SRANDMEMBER       -> {SRandMember(_)},
+    SINTER            -> {SInter(_)},
 
     // transactions
     DISCARD           -> {_ => Discard},
     EXEC              -> {_ => Exec},
     MULTI             -> {_ => Multi},
     UNWATCH           -> {_ => UnWatch},
-    WATCH             -> {Watch(_)}
+    WATCH             -> {Watch(_)},
+
+    // HyperLogLogs
+    PFADD             -> {PFAdd(_)},
+    PFCOUNT           -> {PFCount(_)},
+    PFMERGE           -> {PFMerge(_)}
 
   )
 
@@ -263,11 +285,14 @@ object Commands {
 }
 
 object CommandBytes {
+  // Key Commands
   val DEL               = StringToChannelBuffer("DEL")
+  val DUMP              = StringToChannelBuffer("DUMP")
   val EXISTS            = StringToChannelBuffer("EXISTS")
   val EXPIRE            = StringToChannelBuffer("EXPIRE")
   val EXPIREAT          = StringToChannelBuffer("EXPIREAT")
   val KEYS              = StringToChannelBuffer("KEYS")
+  val MOVE              = StringToChannelBuffer("MOVE")
   val PERSIST           = StringToChannelBuffer("PERSIST")
   val PEXPIRE           = StringToChannelBuffer("PEXPIRE")
   val PEXPIREAT         = StringToChannelBuffer("PEXPIREAT")
@@ -328,6 +353,7 @@ object CommandBytes {
   val BRANGE            = StringToChannelBuffer("BRANGE")
 
   // Miscellaneous
+  val FLUSHALL          = StringToChannelBuffer("FLUSHALL")
   val FLUSHDB           = StringToChannelBuffer("FLUSHDB")
   val SELECT            = StringToChannelBuffer("SELECT")
   val AUTH              = StringToChannelBuffer("AUTH")
@@ -338,6 +364,7 @@ object CommandBytes {
 
   // Hash Sets
   val HDEL              = StringToChannelBuffer("HDEL")
+  val HEXISTS           = StringToChannelBuffer("HEXISTS")
   val HGET              = StringToChannelBuffer("HGET")
   val HGETALL           = StringToChannelBuffer("HGETALL")
   val HINCRBY           = StringToChannelBuffer("HINCRBY")
@@ -369,6 +396,8 @@ object CommandBytes {
   val SCARD             = StringToChannelBuffer("SCARD")
   val SREM              = StringToChannelBuffer("SREM")
   val SPOP              = StringToChannelBuffer("SPOP")
+  val SRANDMEMBER       = StringToChannelBuffer("SRANDMEMBER")
+  val SINTER            = StringToChannelBuffer("SINTER")
 
   // Transactions
   val DISCARD           = StringToChannelBuffer("DISCARD")
@@ -376,13 +405,19 @@ object CommandBytes {
   val MULTI             = StringToChannelBuffer("MULTI")
   val UNWATCH           = StringToChannelBuffer("UNWATCH")
   val WATCH             = StringToChannelBuffer("WATCH")
+
+  // HyperLogLogs
+  val PFADD             = StringToChannelBuffer("PFADD")
+  val PFCOUNT           = StringToChannelBuffer("PFCOUNT")
+  val PFMERGE           = StringToChannelBuffer("PFMERGE")
 }
 
 
 class CommandCodec extends UnifiedProtocolCodec {
+
+  import RedisCodec._
   import com.twitter.finagle.redis.naggati.Encoder
   import com.twitter.finagle.redis.naggati.Stages._
-  import RedisCodec._
   import com.twitter.logging.Logger
 
   val log = Logger(getClass)
@@ -405,7 +440,7 @@ class CommandCodec extends UnifiedProtocolCodec {
 
   def decodeInlineRequest(c: Char) = readLine { line =>
     val listOfArrays = (c + line).split(' ').toList.map {
-      args => args.getBytes(CharsetUtil.UTF_8)
+      args => args.getBytes(Charsets.Utf8)
     }
     val cmd = commandDecode(listOfArrays)
     emit(cmd)

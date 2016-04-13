@@ -1,14 +1,14 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:guava'),
-    pants('3rdparty:junit'),
-    pants('3rdparty:mockito-all'),
-    pants('3rdparty:netty'),
-    pants('3rdparty:specs'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-kestrel'),
-    pants('finagle/finagle-memcached'),
-    pants('util/util-core')
+    '3rdparty/jvm/com/google/guava',
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/mockito:mockito-all',
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/scalatest',
+    'finagle/finagle-core',
+    'finagle/finagle-kestrel',
+    'finagle/finagle-memcached',
+    'util/util-core'
   ],
   sources=rglobs('*.scala')
 )

@@ -1,20 +1,18 @@
 package com.twitter.finagle
 
-/**
- * Codecs provide protocol encoding and decoding via netty pipelines
- * as well as a standard filter stack that are applied to services
- * from this codec.
- */
-
-import com.twitter.finagle.dispatch.{SerialClientDispatcher, SerialServerDispatcher}
+import com.twitter.finagle.dispatch.{GenSerialClientDispatcher, SerialClientDispatcher, SerialServerDispatcher}
+import com.twitter.finagle.netty3.transport.ChannelTransport
 import com.twitter.finagle.stats.StatsReceiver
-import com.twitter.finagle.transport.{ClientChannelTransport, Transport}
+import com.twitter.finagle.tracing.TraceInitializerFilter
+import com.twitter.finagle.transport.Transport
 import com.twitter.util.Closable
 import java.net.{InetSocketAddress, SocketAddress}
 import org.jboss.netty.channel.{Channel, ChannelPipeline, ChannelPipelineFactory}
 
 /**
- * Superclass for all codecs.
+ * Codecs provide protocol encoding and decoding via netty pipelines
+ * as well as a standard filter stack that is applied to services
+ * from this codec.
  */
 trait Codec[Req, Rep] {
   /**
@@ -30,36 +28,65 @@ trait Codec[Req, Rep] {
    * Prepare a factory for usage with the codec. Used to allow codec
    * modifications to the service at the top of the network stack.
    */
-  def prepareServiceFactory(underlying: ServiceFactory[Req, Rep]): ServiceFactory[Req, Rep] =
+  def prepareServiceFactory(
+    underlying: ServiceFactory[Req, Rep]
+  ): ServiceFactory[Req, Rep] =
     underlying
 
   /**
    * Prepare a connection factory. Used to allow codec modifications
    * to the service at the bottom of the stack (connection level).
    */
-  def prepareConnFactory(underlying: ServiceFactory[Req, Rep]): ServiceFactory[Req, Rep] =
-    underlying
+  final def prepareConnFactory(underlying: ServiceFactory[Req, Rep]): ServiceFactory[Req, Rep] =
+    prepareConnFactory(underlying, Stack.Params.empty)
+
+  def prepareConnFactory(
+    underlying: ServiceFactory[Req, Rep],
+    params: Stack.Params
+  ): ServiceFactory[Req, Rep] = underlying
 
   /**
    * Note: the below ("raw") interfaces are low level, and require a
    * good understanding of finagle internals to implement correctly.
    * Proceed with care.
    */
+  def newClientTransport(ch: Channel, statsReceiver: StatsReceiver): Transport[Any, Any] =
+    new ChannelTransport(ch)
 
-  def newClientTransport(ch: Channel, statsReceiver: StatsReceiver): Transport[Req, Rep] =
-    new ClientChannelTransport[Req, Rep](ch, statsReceiver)
+  final def newClientDispatcher(transport: Transport[Any, Any]): Service[Req, Rep] =
+    newClientDispatcher(transport, Stack.Params.empty)
 
-  def newClientDispatcher(transport: Transport[Req, Rep]): Service[Req, Rep] =
-    new SerialClientDispatcher(transport)
+  def newClientDispatcher(
+    transport: Transport[Any, Any],
+    params: Stack.Params
+  ): Service[Req, Rep] =
+    new SerialClientDispatcher(
+      Transport.cast[Req, Rep](transport),
+      params[param.Stats].statsReceiver.scope(GenSerialClientDispatcher.StatsScope)
+    )
 
-  def newServerDispatcher(transport: Transport[Rep, Req], service: Service[Req, Rep]): Closable =
-    new SerialServerDispatcher[Req, Rep](transport, service)
+  def newServerDispatcher(
+    transport: Transport[Any, Any],
+    service: Service[Req, Rep]
+  ): Closable =
+    new SerialServerDispatcher[Req, Rep](Transport.cast[Rep, Req](transport), service)
 
   /**
    * Is this Codec OK for failfast? This is a temporary hack to
    * disable failFast for codecs for which it isn't well-behaved.
    */
   def failFastOk = true
+
+  /**
+   * A hack to allow for overriding the TraceInitializerFilter when using
+   * Client/Server Builders rather than stacks.
+   */
+  def newTraceInitializer: Stackable[ServiceFactory[Req, Rep]] = TraceInitializerFilter.clientModule[Req, Rep]
+
+  /**
+   * A protocol library name to use for displaying which protocol library this client or server is using.
+   */
+  def protocolLibraryName: String = "not-specified"
 }
 
 /**
@@ -68,11 +95,12 @@ trait Codec[Req, Rep] {
 abstract class AbstractCodec[Req, Rep] extends Codec[Req, Rep]
 
 object Codec {
-  def ofPipelineFactory[Req, Rep](makePipeline: => ChannelPipeline) = new Codec[Req, Rep] {
-    def pipelineFactory = new ChannelPipelineFactory {
-      def getPipeline = makePipeline
+  def ofPipelineFactory[Req, Rep](makePipeline: => ChannelPipeline) =
+    new Codec[Req, Rep] {
+      def pipelineFactory = new ChannelPipelineFactory {
+        def getPipeline = makePipeline
+      }
     }
-  }
 
   def ofPipeline[Req, Rep](p: ChannelPipeline) = new Codec[Req, Rep] {
     def pipelineFactory = new ChannelPipelineFactory {
@@ -110,4 +138,9 @@ trait CodecFactory[Req, Rep] {
 
   def client: Client
   def server: Server
+
+  /**
+   * A protocol library name to use for displaying which protocol library this client or server is using.
+   */
+  def protocolLibraryName: String = "not-specified"
 }

@@ -1,33 +1,45 @@
 package com.twitter.finagle.stats
 
+import com.twitter.app.GlobalFlag
 import com.twitter.conversions.time._
+import com.twitter.finagle.http.{RequestParamMap, Response, Request, HttpMuxHandler}
+import com.twitter.io.Buf
 import com.twitter.ostrich.stats.{StatsListener, Stats}
-import com.twitter.finagle.http.HttpMuxHandler
 import com.twitter.util.Future
-import org.jboss.netty.buffer.ChannelBuffers
-import org.jboss.netty.handler.codec.http._
+import com.twitter.util.registry.GlobalRegistry
+
+object ostrichFilterRegex extends GlobalFlag(Seq.empty[String], "Ostrich filter regex")
 
 class OstrichExporter extends HttpMuxHandler {
   val pattern = "/stats.json"
 
-  def apply(request: HttpRequest): Future[HttpResponse] = {
-    def getParam(name: String): Option[String] = Option(request.getHeader(name))
+  val regexes = ostrichFilterRegex().toList.map(_.r)
 
-    val content = json(getParam("period"), getParam("namespace"))
-    val response = new DefaultHttpResponse(HttpVersion.HTTP_1_1, HttpResponseStatus.OK)
-    response.setContent(ChannelBuffers.wrappedBuffer(content.getBytes))
+  GlobalRegistry.get.put(
+    Seq("stats", "ostrich", "counters_latched"),
+    "true")
+
+  def apply(request: Request): Future[Response] = {
+    val params = new RequestParamMap(request)
+    val period = params.get("period")
+    val namespace = params.get("namespace")
+    val filtered = params.get("filtered").getOrElse("0") == "1"
+
+    val content = json(period, namespace, filtered)
+    val response = Response()
+    response.content = Buf.Utf8(content)
     Future.value(response)
   }
 
-  def json(period: Option[String], namespace: Option[String]): String = {
+  def json(period: Option[String], namespace: Option[String], filtered: Boolean): String = {
 
     // TODO: read command line args (minPeriod, filterRegex)?
     val summary = (period, namespace) match {
       case (Some(period), _) =>
         val duration = period.toInt.seconds
-        StatsListener(duration, Stats).get()
+        StatsListener(duration, Stats, regexes).get(filtered)
       case (None, Some(namespace)) =>
-        StatsListener(namespace, Stats).get()
+        StatsListener(namespace, Stats).get(filtered)
       case _ =>
         Stats.get()
     }

@@ -1,3 +1,10 @@
-thrift_library(name='thrift',
-  sources=rglobs('*.thrift')
+java_thrift_library(name='thrift-scala',
+  sources=rglobs('*.thrift'),
+  compiler='scrooge',
+  language='scala',
+  rpc_style='finagle',
+  provides=artifact(org='com.twitter',
+                    name='finagle-zipkin-thrift',
+                    repo = artifactory,),
 )
+

@@ -2,13 +2,13 @@ package com.twitter.finagle.redis
 
 import com.twitter.finagle._
 import com.twitter.finagle.redis.protocol._
-import com.twitter.finagle.stats.{NullStatsReceiver, StatsReceiver}
+import com.twitter.finagle.stats.StatsReceiver
 import com.twitter.finagle.tracing.{Annotation, Trace}
 import com.twitter.finagle.redis.naggati.{Codec => NaggatiCodec}
 import org.jboss.netty.channel.{ChannelPipelineFactory, Channels}
 
 object Redis {
-  def apply(stats: StatsReceiver = NullStatsReceiver) = new Redis(stats)
+  def apply() = new Redis()
   def get() = apply()
 }
 
@@ -24,9 +24,7 @@ object RedisClientPipelineFactory extends ChannelPipelineFactory {
   }
 }
 
-class Redis(stats: StatsReceiver) extends CodecFactory[Command, Reply] {
-
-  def this() = this(NullStatsReceiver)
+class Redis extends CodecFactory[Command, Reply] {
 
   def server: ServerCodecConfig => Codec[Command, Reply] =
     Function.const {
@@ -50,18 +48,24 @@ class Redis(stats: StatsReceiver) extends CodecFactory[Command, Reply] {
       new Codec[Command, Reply] {
         def pipelineFactory = RedisClientPipelineFactory
 
-        override def prepareConnFactory(underlying: ServiceFactory[Command, Reply]) = {
-          new RedisTracingFilter() andThen new RedisLoggingFilter(stats) andThen underlying
+        override def prepareConnFactory(
+            underlying: ServiceFactory[Command, Reply],
+            params: Stack.Params) = {
+          new RedisTracingFilter()
+            .andThen(new RedisLoggingFilter(params[param.Stats].statsReceiver))
+            .andThen(underlying)
         }
       }
     }
 
+  override val protocolLibraryName: String = "redis"
 }
 
 private class RedisTracingFilter extends SimpleFilter[Command, Reply] {
-  override def apply(command: Command, service: Service[Command, Reply]) = Trace.unwind {
+  override def apply(command: Command, service: Service[Command, Reply]) = {
     if (Trace.isActivelyTracing) {
-      Trace.recordRpcname("redis", command.command)
+      Trace.recordServiceName("redis")
+      Trace.recordRpc(command.command)
       Trace.record(Annotation.ClientSend())
       service(command) map { response =>
         Trace.record(Annotation.ClientRecv())
@@ -80,7 +84,7 @@ private class RedisLoggingFilter(stats: StatsReceiver)
   private[this] val succ  = stats.scope("success")
 
   override def apply(command: Command, service: Service[Command, Reply]) = {
-    service(command) map { response =>
+    service(command).map { response =>
       response match {
         case StatusReply(_)
           | IntegerReply(_)

@@ -1,15 +1,12 @@
-maven_layout()
-
-jar_library(name='finagle-thrift',
+target(name='finagle-thrift',
   dependencies=[
-    pants('finagle/finagle-thrift/src/main/java'),
-    pants('finagle/finagle-thrift/src/main/scala')
+    'finagle/finagle-thrift/src/main/scala'
   ]
 )
 
-jar_library(name='tests',
+target(name='tests',
   dependencies=[
-    pants('finagle/finagle-thrift/src/test/java'),
-    pants('finagle/finagle-thrift/src/test/scala')
+    'finagle/finagle-thrift/src/test/java',
+    'finagle/finagle-thrift/src/test/scala'
   ]
 )

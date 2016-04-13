@@ -1,13 +1,13 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:mockito-all'),
-    pants('3rdparty:scalatest'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-exception'),
-    pants('streamyj'),
-    pants('util/util-codec'),
-    pants('util/util-core')
+    '3rdparty/jvm/com/fasterxml/jackson/core:jackson-databind',
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/mockito:mockito-all',
+    '3rdparty/jvm/org/scalatest',
+    'finagle/finagle-core',
+    'finagle/finagle-exception',
+    'util/util-codec',
+    'util/util-core'
   ],
   sources=rglobs('*.scala')
 )

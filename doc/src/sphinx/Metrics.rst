@@ -1,61 +1,193 @@
 Metrics
+=======
+
+This section aims to be a comprehensive list of all of the metrics that Finagle
+exposes. The metrics are organized by layer and then by class.
+
+Some of the stats are only for clients, some only for servers, and some are for both.
+Some stats are only visible when certain optional classes are used.
+
+NB: Finagle sometimes uses ``RollupStatsReceivers`` internally, which will take
+stats like "failures/twitter/TimeoutException" and roll them up, aggregating
+into "failures/twitter" and also "failures". For example, if there are 3
+"failures/twitter/TimeoutException" counted, and 4
+"failures/twitter/ConnectTimeoutException", then it will count 7 for
+"failures/twitter".
+
+Public
+------
+
+.. _public_stats:
+
+These stats come from the public interface, and are the ones that you should look at first
+to figure out whether a client is abusing you, or you are misusing a downstream service.
+They are also useful in diagnosing what contributes to request latency.
+
+.. include:: metrics/Public.rst
+
+Construction
+------------
+
+.. _construction_stats:
+
+These stats are about setting up services in Finagle, and expose whether you are
+having trouble making services.
+
+.. include:: metrics/Construction.rst
+
+Finagle
 -------
 
-Here are some of the metrics reported by finagle. All times are in milliseconds. A metric is either
-a count (C) or a statistic (S).
+.. _finagle_stats:
 
-+-------------------------+-+----------------------------------------------------------------------+
-|closechan                |C|This counter is incremented every time a connection is closed. Timed  |
-|                         | |out connections are closed. By default an idle connection times out in|
-|                         | |5 seconds (hostConnectionIdleTime).                                   |
-+-------------------------+-+----------------------------------------------------------------------+
-|connection_duration      |S|A stats (an Histogram) representing the distribution of the duration  |
-|                         | |of a connection. closechan` and `connection_duration.count` must be   |
-|                         | |equal.                                                                |
-+-------------------------+-+----------------------------------------------------------------------+
-|connection_received_bytes|S|bytes received per connection                                         |
-+-------------------------+-+----------------------------------------------------------------------+
-|connection_requests      |S|Number of requests per connection, observed after it closes.          |
-+-------------------------+-+----------------------------------------------------------------------+
-|connection_sent_bytes    |S|Bytes sent per connection                                             |
-+-------------------------+-+----------------------------------------------------------------------+
-|connections              |C|The current number of connections between client and server.          |
-+-------------------------+-+----------------------------------------------------------------------+
-|handletime_us            |S|The walltime elapsed while handling a request.                        |
-+-------------------------+-+----------------------------------------------------------------------+
-|requests                 |S|The number of requests dispatched.                                    |
-+-------------------------+-+----------------------------------------------------------------------+
-|pending                  |C|Number of pending requests (i.e. requests without responses).         |
-+-------------------------+-+----------------------------------------------------------------------+
-|request_latency_ms       |S|The time from the beginning of a request until the response is        |
-|                         | |received                                                              |
-+-------------------------+-+----------------------------------------------------------------------+
-					
-Pool Counts
-^^^^^^^^^^^
+These metrics track various Finagle internals.
 
-The pool is a collection of tcp connections to a single host.
+.. include:: metrics/Finagle.rst
 
-pool_cached
-  finagle's default connection pool is called a "watermark" pool because it has a lower-bound and
-  upper-bound (high and low water marks). The WaterMarkPool keeps persistent connections up the
-  lower-bound. It will keep making connections up to upper-bound if you checkout more than
-  lower-bound connections, but when you release those connections above the lower-bound, it
-  immediately tries to close them. This creates a lot of connection churn if you keep needing more
-  than lower-bound connections. As a result, there is a separate facility for caching for a few
-  seconds (with some TTL) those connections above the lower bound and not closing them and
-  re-opening them after every request. It caches REGARDLESS of whether there are more than
-  lower-bound open connections; it's always caching UP TO (upper-bound - lower-bound)
-  connections. The cache reaches its peak value when you reach your peak concurrency (i.e., "load"),
-  and then slowly decays, based on the TTL. (The default TTL is 5 seconds).
+Load Balancing
+--------------
 
-pool_size
-  represents the number of connections open to the host, as seen by the connection pool. It should
-  be between the min and max of your client builder spec.
+.. _loadbalancer_stats:
 
-  If you can see that "pool_waiters" is exactly zero, then there is no queueing waiting to get a
-  connection from the pool. This means your pool is not under-sized under the current
-  workload. That's a good thing.
+The client stats under the `loadbalancer` scope expose the innards of
+what's going on with load balancing, and the management of equivalent
+groups of hosts.
 
-pool_waiters
-  the number of requests that are queued while waiting for a connection.
+.. include:: metrics/LoadBalancing.rst
+
+Fail Fast
+----------
+
+.. _fail_fast_stats:
+
+The client stats under the `failfast` scope give insight into how
+Finagle handles services where it can't establish a connection.
+
+.. include:: metrics/FailFast.rst
+
+Failure Accrual
+---------------
+
+.. _failure_accrual_stats:
+
+The client stats under the `failure_accrual` scope track how
+:src:`FailureAccrualFactory <com/twitter/finagle/service/FailureAccrualFactory.scala>`
+manages failures.
+
+.. include:: metrics/FailureAccrual.rst
+
+Idle Apoptosis
+--------------
+
+.. _idle_apoptosis_stats:
+
+These client stats keep track of how frequently
+:doc:`Services <ServicesAndFilters>` are closed due to prolonged idleness.
+
+.. include:: metrics/IdleApoptosis.rst
+
+Rate Limiting
+-------------
+
+.. _rate_limiting_stats:
+
+These client stats show how much you're hitting your rate limit if you're using rate limiting.
+
+.. include:: metrics/RateLimiting.rst
+
+Pooling
+-------
+
+.. _pool_stats:
+
+These client stats help you keep track of connection churn.
+
+.. include:: metrics/Pooling.rst
+
+Retries
+-------
+
+.. _retries:
+
+.. include:: metrics/Retries.rst
+
+Dispatching
+-----------
+
+.. _dispatching:
+
+Metrics scoped under `dispatcher` represent information about a client's dispatching
+layer.
+
+Depending on the underlying protocol, dispatchers may have different request
+queueing rules.
+
+**serial/queue_size**
+  a gauge used by serial dispatchers that can only have a single request
+  per connection at a time that represents the number of pending requests.
+
+**pipelining/pending**
+  a gauge used by pipelining dispatchers that represents how many
+  pipelined requests are currently outstanding.
+
+Admission Control
+-----------------
+
+.. _admission_control_stats:
+
+The stats under the `admission_control` scope show stats for the different admission control
+strategies.
+
+.. include:: metrics/AdmissionControl.rst
+
+Mux
+---
+
+.. _mux_stats:
+
+These stats pertain to the :ref:`Mux <mux>` protocol.
+
+.. include:: metrics/Mux.rst
+
+Threshold Failure Detector
+--------------------------
+
+.. _failure_detector:
+
+The client metrics under the `mux/failuredetector` scope track the behavior of
+out-of-band RTT-based failure detection. They only apply to the mux
+protocol.
+
+.. include:: metrics/FailureDetector.rst
+
+Transport
+---------
+
+.. _transport_stats:
+
+These metrics pertain to where the Finagle abstraction ends and the bytes are sent over the wire.
+Understanding these stats often requires deep knowledge of the protocol, or individual transport
+(e.g. Netty) internals.
+
+.. include:: metrics/Transport.rst
+
+
+Service Discovery
+-----------------
+
+.. _service_discovery:
+
+These metrics track the state of name resolution and service discovery.
+
+.. include:: metrics/ServiceDiscovery.rst
+
+
+HTTP
+----
+.. _http_stats:
+
+These stats pertain to the HTTP protocol.
+
+**nacks**
+  A counter of the number of retryable HTTP 503 responses the Http server returns. Those
+  responses are automatically retried by Finagle Http client.

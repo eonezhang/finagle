@@ -1,7 +1,5 @@
-maven_layout()
-
-jar_library(name='finagle-benchmark',
+target(name='finagle-benchmark',
   dependencies=[
-    pants('finagle/finagle-benchmark/src/main/scala')
+    'finagle/finagle-benchmark/src/main/scala'
   ]
 )

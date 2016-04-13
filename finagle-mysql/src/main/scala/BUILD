@@ -1,9 +1,15 @@
 scala_library(name='scala',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-mysql',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('util/util-core'),
-    pants('util/util-logging')
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'util/util-core',
+    'util/util-cache',
+    'util/util-logging'
   ],
-  sources=rglobs('*.scala')
+  sources=rglobs('*.scala'),
 )

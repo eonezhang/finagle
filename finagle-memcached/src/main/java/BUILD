@@ -1,12 +1,17 @@
 java_library(name='java',
+  provides = artifact(
+    org = 'com.twitter',
+    name = 'finagle-memcached-java',
+    repo = artifactory
+  ),
   dependencies=[
-    pants('3rdparty:guava'),
-    pants('3rdparty:netty'),
-    pants('3rdparty:scala-library'),
-    pants('3rdparty/com/twitter/common/zookeeper:client'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-memcached/src/main/scala'),
-    pants('util/util-core'),
+    '3rdparty/jvm/com/google/guava',
+    'science/src/java/com/twitter/common/zookeeper:client',
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/scala-lang:scala-library',
+    'finagle/finagle-core',
+    'finagle/finagle-memcached/src/main/scala',
+    'util/util-core',
   ],
   sources=rglobs('*.java')
 )

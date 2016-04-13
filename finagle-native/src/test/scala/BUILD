@@ -1,14 +1,15 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:netty'),
-    pants('3rdparty:specs'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-http'),
-    pants('util/util-core'),
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/scalatest',
+    'finagle/finagle-core',
+    'finagle/finagle-http',
+    'util/util-core',
   ],
+  fatal_warnings=True,
   sources=rglobs('*.scala'),
   resources=[
-    pants('finagle/finagle-native/src/test/resources')
+    'finagle/finagle-native/src/test/resources'
   ]
 )

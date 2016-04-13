@@ -17,6 +17,7 @@ object Client {
       .hosts(host)
       .hostConnectionLimit(1)
       .codec(Redis())
+      .daemon(true)
       .build())
 
   /**
@@ -36,6 +37,7 @@ class Client(service: Service[Command, Reply])
   with Lists
   with Sets
   with BtreeSortedSetCommands
+  with HyperLogLogs
 
 /**
  * Connects to a single Redis host
@@ -61,6 +63,14 @@ class BaseClient(service: Service[Command, Reply]) {
     doRequest(Info(section)) {
       case BulkReply(message) => Future.value(Some(message))
       case EmptyBulkReply() => Future.value(None)
+    }
+
+  /**
+   * Deletes all keys in all databases
+   */
+  def flushAll(): Future[Unit] =
+    doRequest(FlushAll) {
+      case StatusReply(_) => Future.Unit
     }
 
   /**
@@ -107,7 +117,10 @@ class BaseClient(service: Service[Command, Reply]) {
    */
   private[redis] def returnPairs(messages: Seq[ChannelBuffer]) = {
     assert(messages.length % 2 == 0, "Odd number of items in response")
-    messages.grouped(2).toSeq flatMap { case Seq(a, b) => Some(a, b); case _ => None }
+    messages.grouped(2).toSeq.flatMap {
+      case Seq(a, b) => Some((a, b))
+      case _ => None
+    }
   }
 
 }
@@ -157,6 +170,7 @@ object TransactionalClient {
       .hosts(host)
       .hostConnectionLimit(1)
       .codec(Redis())
+      .daemon(true)
       .buildFactory())
 
   /**
@@ -177,11 +191,11 @@ private[redis] class ConnectedTransactionalClient(
 
   def transaction(cmds: Seq[Command]): Future[Seq[Reply]] = {
     serviceFactory() flatMap { svc =>
-      multi(svc) flatMap { _ =>
+      multi(svc) before {
         val cmdQueue = cmds map { cmd => svc(cmd) }
-        Future.collect(cmdQueue) flatMap { _ => exec(svc) }
+        Future.collect(cmdQueue).unit before exec(svc)
       } rescue { case e =>
-        svc(Discard) flatMap { _ =>
+        svc(Discard).unit before {
           Future.exception(ClientError("Transaction failed: " + e.toString))
         }
       } ensure {

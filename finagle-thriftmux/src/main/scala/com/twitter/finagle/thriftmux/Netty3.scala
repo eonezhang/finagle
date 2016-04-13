@@ -1,21 +1,39 @@
 package com.twitter.finagle.thriftmux
 
-import com.twitter.finagle.mux.{BadMessageException, Message}
-import com.twitter.finagle.thrift.thrift.{ResponseHeader, RequestHeader, UpgradeReply}
-import com.twitter.finagle.thrift.{OutputBuffer, ThriftTracing, InputBuffer}
-import com.twitter.finagle.tracing.{Flags, SpanId, TraceId}
-import com.twitter.finagle.{mux, ThriftMuxUtil}
-import com.twitter.util.NonFatal
+import com.twitter.finagle.{Path, Failure, Dtab, ThriftMuxUtil}
+import com.twitter.finagle.mux.transport.{BadMessageException, Message, Netty3Framer}
+import com.twitter.finagle.netty3.BufChannelBuffer
+import com.twitter.finagle.stats.{NullStatsReceiver, StatsReceiver}
+import com.twitter.finagle.thrift._
+import com.twitter.finagle.thrift.thrift.{
+  RequestContext, RequestHeader, ResponseHeader, UpgradeReply}
+import com.twitter.finagle.tracing.Trace
+import com.twitter.logging.Level
+import com.twitter.util.{Try, Return, Throw, NonFatal}
 import java.util.concurrent.LinkedBlockingDeque
 import java.util.concurrent.atomic.AtomicInteger
-import org.apache.thrift.protocol.{TBinaryProtocol, TProtocolFactory, TMessage, TMessageType}
+import org.apache.thrift.protocol.{TProtocolFactory, TMessage, TMessageType}
 import org.jboss.netty.buffer.{ChannelBuffers, ChannelBuffer}
 import org.jboss.netty.channel._
+import scala.collection.mutable
 
-private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
+/**
+ * A [[org.jboss.netty.channel.ChannelPipelineFactory]] that manages the downgrading
+ * of mux server sessions to plain thrift or twitter thrift. Because this is used in the
+ * context of the mux server dispatcher it's important that when we downgrade, we faithfully
+ * emulate the mux protocol. Additionally, the pipeline records the number of open ThriftMux
+ * and non-Mux downgraded sessions in a pair of [[java.util.concurrent.atomic.AtomicInteger AtomicIntegers]].
+ */
+// Note: this lives in a file that doesn't match the class name in order
+// to decouple Netty from finagle and isolate everything related to Netty3 into a single file.
+private[finagle] class PipelineFactory(
+    statsReceiver: StatsReceiver = NullStatsReceiver,
+    protocolFactory: TProtocolFactory = Protocols.binaryFactory())
   extends ChannelPipelineFactory
 {
-  case class UnexpectedRequestException(err: String) extends Exception(err)
+
+  def newUnexpectedRequestException(err: String): Failure =
+    Failure(err).withLogLevel(Level.DEBUG)
 
   private object TTwitterToMux {
     private val responseHeader = ChannelBuffers.wrappedBuffer(
@@ -25,65 +43,120 @@ private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
   private class TTwitterToMux extends SimpleChannelHandler {
     import TTwitterToMux._
 
-    private[this] def thriftToTreq(req: ChannelBuffer): Message.Treq = {
+    private[this] def contextStructToKVTuple(c: RequestContext): (ChannelBuffer, ChannelBuffer) =
+      (ChannelBuffers.wrappedBuffer(c.getKey), ChannelBuffers.wrappedBuffer(c.getValue))
+
+    private[this] def thriftToMux(req: ChannelBuffer): Message.Tdispatch = {
       val header = new RequestHeader
-      val request_ = InputBuffer.peelMessage(ThriftMuxUtil.bufferToArray(req), header, protocolFactory)
-      val sampled = if (header.isSetSampled) Some(header.isSampled) else None
-      val traceId = TraceId(
-        if (header.isSetTrace_id) Some(SpanId(header.getTrace_id)) else None,
-        if (header.isSetParent_span_id) Some(SpanId(header.getParent_span_id)) else None,
-        SpanId(header.getSpan_id),
-        sampled,
-        if (header.isSetFlags) Flags(header.getFlags) else Flags())
-      Message.Treq(Message.MinTag, Some(traceId), ChannelBuffers.wrappedBuffer(request_))
+      val request_ = InputBuffer.peelMessage(
+        ThriftMuxUtil.bufferToArray(req),
+        header,
+        protocolFactory
+      )
+      val richHeader = new RichRequestHeader(header)
+
+      val contextBuf =
+        new mutable.ArrayBuffer[(ChannelBuffer, ChannelBuffer)](
+          2 + (if (header.contexts == null) 0 else header.contexts.size))
+
+      contextBuf += (
+        BufChannelBuffer(Trace.idCtx.marshalId) ->
+        BufChannelBuffer(Trace.idCtx.marshal(richHeader.traceId)))
+
+      richHeader.clientId match {
+        case Some(clientId) =>
+          val clientIdBuf = ClientId.clientIdCtx.marshal(Some(clientId))
+          contextBuf += (
+            BufChannelBuffer(ClientId.clientIdCtx.marshalId) ->
+            BufChannelBuffer(clientIdBuf))
+        case None =>
+      }
+
+      if (header.contexts != null) {
+        val iter = header.contexts.iterator()
+        while (iter.hasNext) {
+          contextBuf += contextStructToKVTuple(iter.next())
+        }
+      }
+
+      val requestBuf = ChannelBuffers.wrappedBuffer(request_)
+
+      Message.Tdispatch(
+        Message.Tags.MinTag, contextBuf.toSeq, richHeader.dest, richHeader.dtab, requestBuf)
     }
 
-    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent)  {
+    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent): Unit =  {
       val buf = e.getMessage.asInstanceOf[ChannelBuffer]
-      super.messageReceived(ctx,
-        new UpstreamMessageEvent(e.getChannel, Message.encode(thriftToTreq(buf)), e.getRemoteAddress))
+      super.messageReceived(ctx, new UpstreamMessageEvent(
+        e.getChannel, Message.encode(thriftToMux(buf)), e.getRemoteAddress))
     }
 
-    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent) {
+    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
       Message.decode(e.getMessage.asInstanceOf[ChannelBuffer]) match {
-        case Message.RreqOk(_, rep) =>
+        case Message.RdispatchOk(_, _, rep) =>
           super.writeRequested(ctx,
             new DownstreamMessageEvent(e.getChannel, e.getFuture,
               ChannelBuffers.wrappedBuffer(responseHeader, rep), e.getRemoteAddress))
-        case Message.RreqError(_, error) =>
-          // OK to throw an exception here as ServerBridge take cares it
-          // by logging the error and then closing the channel.
-          throw UnexpectedRequestException(error)
-        case _ =>
-          // Since only a RreqOK or RreqError is expected from the earlier
-          // request, simply drop all other mux messages.
+
+        case Message.RdispatchNack(_, _) =>
+          // The only mechanism for negative acknowledgement afforded by non-Mux
+          // clients is to tear down the connection.
+          Channels.close(e.getChannel)
+
+        case Message.Tdrain(tag) =>
+          // Terminate the write here with a "success" and synthesize a Rdrain response.
+          // Although downgraded connections don't understand Tdrains, we synthesize a Rdrain
+          // so the server dispatcher enters draining mode.
+          e.getFuture.setSuccess()
+          super.messageReceived(ctx,
+            new UpstreamMessageEvent(
+              e.getChannel,
+              Message.encode(Message.Rdrain(tag)),
+              e.getRemoteAddress))
+
+        case unexpected =>
+          throw newUnexpectedRequestException(
+            s"unable to send ${unexpected.getClass.getName} to non-mux client")
       }
     }
   }
 
   private class TFramedToMux extends SimpleChannelHandler {
-    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent)  {
+    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
+      Message.decode(e.getMessage.asInstanceOf[ChannelBuffer]) match {
+        case Message.RdispatchOk(_, _, rep) =>
+          super.writeRequested(ctx,
+            new DownstreamMessageEvent(e.getChannel, e.getFuture, rep, e.getRemoteAddress))
+
+        case Message.RdispatchNack(_, _) =>
+          // The only mechanism for negative acknowledgement afforded by non-Mux
+          // clients is to tear down the connection.
+          Channels.close(e.getChannel)
+
+        case Message.Tdrain(tag) =>
+          // Terminate the write here with a "success" and synthesize a Rdrain response.
+          // Although downgraded connections don't understand Tdrains, we synthesize a Rdrain
+          // so the server dispatcher enters draining mode.
+          e.getFuture.setSuccess()
+          super.messageReceived(ctx,
+            new UpstreamMessageEvent(
+              e.getChannel,
+              Message.encode(Message.Rdrain(tag)),
+              e.getRemoteAddress))
+
+        case unexpected =>
+          throw newUnexpectedRequestException(
+            s"unable to send ${unexpected.getClass.getName} to non-mux client")
+      }
+    }
+
+    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
       val buf = e.getMessage.asInstanceOf[ChannelBuffer]
       super.messageReceived(ctx,
         new UpstreamMessageEvent(
           e.getChannel,
-          Message.encode(Message.Treq(Message.MinTag, None, buf)),
+          Message.encode(Message.Tdispatch(Message.Tags.MinTag, Nil, Path.empty, Dtab.empty, buf)),
           e.getRemoteAddress))
-    }
-
-    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent) {
-      Message.decode(e.getMessage.asInstanceOf[ChannelBuffer]) match {
-        case Message.RreqOk(_, rep) =>
-          super.writeRequested(ctx,
-            new DownstreamMessageEvent(e.getChannel, e.getFuture, rep, e.getRemoteAddress))
-        case Message.RreqError(_, error) =>
-          // OK to throw an exception here as ServerBridge take cares it
-          // by logging the error and then closing the channel.
-          throw UnexpectedRequestException(error)
-        case _ =>
-          // Since only a RreqOK or RreqError is expected from the earlier
-          // request, simply drop all other mux messages.
-      }
     }
   }
 
@@ -95,12 +168,12 @@ private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
     private[this] val q = new LinkedBlockingDeque[MessageEvent]
     private[this] val n = new AtomicInteger(pendingReqs)
 
-    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent) {
+    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
       if (n.incrementAndGet() > 1) q.offer(e)
       else super.messageReceived(ctx, e)
     }
 
-    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent) {
+    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
       super.writeRequested(ctx, e)
       if (n.decrementAndGet() > 0) {
         // Need to call q.take() Since incrementing n and enqueueing the
@@ -111,7 +184,7 @@ private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
   }
 
   private object Upgrader {
-    private lazy val upNegotiationAck = {
+    val upNegotiationAck = {
       val buffer = new OutputBuffer(protocolFactory)
       buffer().writeMessageBegin(
         new TMessage(ThriftTracing.CanTraceMethodName, TMessageType.REPLY, 0))
@@ -122,8 +195,30 @@ private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
     }
   }
 
+  private class DrainQueue[T] {
+    private[this] var q = new mutable.Queue[T]
+
+    def offer(e: T): Boolean = synchronized {
+      if (q != null)
+        q.enqueue(e)
+      q != null
+    }
+
+    def drain(): Iterable[T] = {
+      synchronized {
+        assert(q != null, "Can't drain queue more than once")
+        val q1 = q
+        q = null
+        q1
+      }
+    }
+  }
+
   private class Upgrader extends SimpleChannelHandler {
     import Upgrader._
+
+    // Queue writes until we know what protocol we are speaking.
+    private[this] val writeq = new DrainQueue[MessageEvent]
 
     private[this] def isTTwitterUpNegotiation(req: ChannelBuffer): Boolean = {
       try {
@@ -136,37 +231,116 @@ private[finagle] class PipelineFactory(protocolFactory: TProtocolFactory)
       }
     }
 
-    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent) {
+    override def writeRequested(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
+      if (!writeq.offer(e))
+        super.writeRequested(ctx, e)
+    }
+
+    override def messageReceived(ctx: ChannelHandlerContext, e: MessageEvent): Unit = {
       val buf = e.getMessage.asInstanceOf[ChannelBuffer]
-      try {
-        Message.decode(buf.duplicate())
-        ctx.getPipeline.remove(this)
-        super.messageReceived(ctx, e)
-      } catch {
-        case exc: BadMessageException =>
+      val pipeline = ctx.getPipeline
+      Try { Message.decode(buf.duplicate()) } match {
+        // We assume that a bad message decode indicates an old-style
+        // session. Due to Mux message numbering, a binary-encoded
+        // thrift frame corresponds to an Rerr message with tag
+        // 65537. Note that in this context, an R-message is never
+        // valid.
+        //
+        // Binary-encoded thrift messages have the format
+        //
+        //     header:4 n:4 method:n seqid:4
+        //
+        // The header is
+        //
+        //     0x80010000 | type
+        //
+        // where the type of CALL is 1; the type of ONEWAY is 4. This makes
+        // the first four bytes of a CALL message 0x80010001.
+        //
+        // Mux messages begin with
+        //
+        //     Type:1 tag:3
+        //
+        // Rerr is type 0x80, so we see the above thrift header
+        // Rerr corresponds to (tag=0x010001).
+        //
+        // The hazards of protocol multiplexing.
+        case Throw(_: BadMessageException) |
+             Return(Message.Rerr(65537, _)) |
+             Return(Message.Rerr(65540, _)) =>
+          // Increment ThriftMux connection count stats and wire up a callback to
+          // decrement on channel closure.
+          downgradedConnects.incr()
+          downgradedConnectionCount.incrementAndGet()
+          ctx.getChannel.getCloseFuture.addListener(new ChannelFutureListener {
+            override def operationComplete(f: ChannelFuture): Unit =
+              if (!f.isCancelled) { // on success or failure
+                downgradedConnectionCount.decrementAndGet()
+              }
+          })
+
           // Add a ChannelHandler to serialize the requests since we may
           // deal with a client that pipelines requests
-          ctx.getPipeline.addBefore(ctx.getName, "request_serializer", new RequestSerializer(1))
+          pipeline.addBefore(ctx.getName, "request_serializer", new RequestSerializer(1))
           if (isTTwitterUpNegotiation(buf)) {
-            ctx.getPipeline.replace(this, "twitter_thrift_to_mux", new TTwitterToMux)
+            pipeline.replace(this, "twitter_thrift_to_mux", new TTwitterToMux)
             Channels.write(ctx, e.getFuture, upNegotiationAck, e.getRemoteAddress)
           } else {
-            ctx.getPipeline.replace(this, "framed_thrift_to_mux", new TFramedToMux)
+            pipeline.replace(this, "framed_thrift_to_mux", new TFramedToMux)
             super.messageReceived(ctx,
               new UpstreamMessageEvent(
                 e.getChannel,
-                Message.encode(Message.Treq(Message.MinTag, None, buf)),
+                Message.encode(
+                  Message.Tdispatch(Message.Tags.MinTag, Nil, Path.empty, Dtab.empty, buf)),
                 e.getRemoteAddress))
           }
+
+        case Return(_) =>
+          // Increment ThriftMux connection count stats and wire up a callback to
+          // decrement on channel closure.
+          thriftmuxConnects.incr()
+          thriftMuxConnectionCount.incrementAndGet()
+          ctx.getChannel.getCloseFuture.addListener(new ChannelFutureListener {
+            override def operationComplete(f: ChannelFuture): Unit =
+              if (!f.isCancelled) { // on success or failure
+                thriftMuxConnectionCount.decrementAndGet()
+              }
+          })
+
+          pipeline.remove(this)
+          super.messageReceived(ctx, e)
+
+        case Throw(exc) => throw exc
       }
+
+      // On the surface, this seems bad, since messages may be
+      // reordered. In practice, the Transport interface on top of
+      // Netty's channel is responsible for serializing writes; the
+      // completion Future in the message event is satisfied only
+      // after it has been written to the actual socket by the
+      // Netty's NIO implementation.
+      //
+      // This leaves interdependence between data messages
+      // (writeRequested) and other messages (e.g. channel events).
+      // Here there are none.
+      for (e <- writeq.drain())
+        pipeline.sendDownstream(e)
     }
   }
 
-  def getPipeline() = {
-    val pipeline = mux.PipelineFactory.getPipeline()
-    pipeline.addLast("upgrader", new Upgrader)
+  private[this] val downgradedConnectionCount = new AtomicInteger
+  private[this] val thriftMuxConnectionCount = new AtomicInteger
+
+  private[this] val thriftmuxConnects = statsReceiver.counter("connects")
+  private[this] val downgradedConnects = statsReceiver.counter("downgraded_connects")
+  private[this] val downgradedConnectionGauge =
+    statsReceiver.addGauge("downgraded_connections") { downgradedConnectionCount.get() }
+  private[this] val thriftmuxConnectionGauge =
+    statsReceiver.addGauge("connections") { thriftMuxConnectionCount.get() }
+
+  def getPipeline(): ChannelPipeline = {
+    val pipeline = Netty3Framer.getPipeline()
+    pipeline.addAfter("framer", "upgrader", new Upgrader)
     pipeline
   }
 }
-
-private[finagle] object PipelineFactory extends PipelineFactory(new TBinaryProtocol.Factory())

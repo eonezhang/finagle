@@ -1,20 +1,19 @@
 scala_library(name='scala',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-exception',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:jackson-databind'),
-    pants('3rdparty:jackson-module-scala'),
-    pants('3rdparty:thrift-0.5.0'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-thrift'),
-    pants('util/util-app'),
-    pants('util/util-codec'),
-    pants('util/util-core'),
-    compiled_idl(
-      idl_deps=pants('finagle/finagle-exception/src/main/thrift'),
-      compiler='scrooge-legacy',
-      language='scala',
-      rpc_style='finagle',
-    )
+    '3rdparty/jvm/com/fasterxml/jackson/core:jackson-databind',
+    '3rdparty/jvm/com/fasterxml/jackson/module:jackson-module-scala',
+    '3rdparty/jvm/org/apache/thrift:thrift-0.5.0',
+    'finagle/finagle-core',
+    'finagle/finagle-thrift',
+    'util/util-app',
+    'util/util-codec',
+    'util/util-core',
+    'finagle/finagle-exception/src/main/thrift:thrift-scala',
   ],
   sources=rglobs('*.scala'),
-  resources=pants('finagle/finagle-exception/src/main/resources')
 )

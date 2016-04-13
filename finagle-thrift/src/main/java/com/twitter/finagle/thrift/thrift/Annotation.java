@@ -34,19 +34,16 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
   private static final TField TIMESTAMP_FIELD_DESC = new TField("timestamp", TType.I64, (short)1);
   private static final TField VALUE_FIELD_DESC = new TField("value", TType.STRING, (short)2);
   private static final TField HOST_FIELD_DESC = new TField("host", TType.STRUCT, (short)3);
-  private static final TField DURATION_FIELD_DESC = new TField("duration", TType.I32, (short)4);
 
   public long timestamp;
   public String value;
   public Endpoint host;
-  public int duration;
 
   /** The set of fields this struct contains, along with convenience methods for finding and manipulating them. */
   public enum _Fields implements TFieldIdEnum {
     TIMESTAMP((short)1, "timestamp"),
     VALUE((short)2, "value"),
-    HOST((short)3, "host"),
-    DURATION((short)4, "duration");
+    HOST((short)3, "host");
 
     private static final Map<String, _Fields> byName = new HashMap<String, _Fields>();
 
@@ -67,8 +64,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
           return VALUE;
         case 3: // HOST
           return HOST;
-        case 4: // DURATION
-          return DURATION;
         default:
           return null;
       }
@@ -116,14 +111,12 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
   public static final Map<_Fields, FieldMetaData> metaDataMap;
   static {
     Map<_Fields, FieldMetaData> tmpMap = new EnumMap<_Fields, FieldMetaData>(_Fields.class);
-    tmpMap.put(_Fields.TIMESTAMP, new FieldMetaData("timestamp", TFieldRequirementType.DEFAULT, 
+    tmpMap.put(_Fields.TIMESTAMP, new FieldMetaData("timestamp", TFieldRequirementType.DEFAULT,
         new FieldValueMetaData(TType.I64)));
-    tmpMap.put(_Fields.VALUE, new FieldMetaData("value", TFieldRequirementType.DEFAULT, 
+    tmpMap.put(_Fields.VALUE, new FieldMetaData("value", TFieldRequirementType.DEFAULT,
         new FieldValueMetaData(TType.STRING)));
-    tmpMap.put(_Fields.HOST, new FieldMetaData("host", TFieldRequirementType.OPTIONAL, 
+    tmpMap.put(_Fields.HOST, new FieldMetaData("host", TFieldRequirementType.OPTIONAL,
         new StructMetaData(TType.STRUCT, Endpoint.class)));
-    tmpMap.put(_Fields.DURATION, new FieldMetaData("duration", TFieldRequirementType.OPTIONAL, 
-        new FieldValueMetaData(TType.I32)));
     metaDataMap = Collections.unmodifiableMap(tmpMap);
     FieldMetaData.addStructMetaDataMap(Annotation.class, metaDataMap);
   }
@@ -154,7 +147,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
     if (other.isSetHost()) {
       this.host = new Endpoint(other.host);
     }
-    this.duration = other.duration;
   }
 
   public Annotation deepCopy() {
@@ -167,8 +159,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
     this.timestamp = 0;
     this.value = null;
     this.host = null;
-    setDurationIsSet(false);
-    this.duration = 0;
   }
 
   public long getTimestamp() {
@@ -242,29 +232,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
     }
   }
 
-  public int getDuration() {
-    return this.duration;
-  }
-
-  public Annotation setDuration(int duration) {
-    this.duration = duration;
-    setDurationIsSet(true);
-    return this;
-  }
-
-  public void unsetDuration() {
-    __isset_bit_vector.clear(__DURATION_ISSET_ID);
-  }
-
-  /** Returns true if field duration is set (has been asigned a value) and false otherwise */
-  public boolean isSetDuration() {
-    return __isset_bit_vector.get(__DURATION_ISSET_ID);
-  }
-
-  public void setDurationIsSet(boolean value) {
-    __isset_bit_vector.set(__DURATION_ISSET_ID, value);
-  }
-
   public void setFieldValue(_Fields field, Object value) {
     switch (field) {
     case TIMESTAMP:
@@ -291,14 +258,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
       }
       break;
 
-    case DURATION:
-      if (value == null) {
-        unsetDuration();
-      } else {
-        setDuration((Integer)value);
-      }
-      break;
-
     }
   }
 
@@ -312,9 +271,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
 
     case HOST:
       return getHost();
-
-    case DURATION:
-      return new Integer(getDuration());
 
     }
     throw new IllegalStateException();
@@ -333,8 +289,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
       return isSetValue();
     case HOST:
       return isSetHost();
-    case DURATION:
-      return isSetDuration();
     }
     throw new IllegalStateException();
   }
@@ -376,15 +330,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
       if (!(this_present_host && that_present_host))
         return false;
       if (!this.host.equals(that.host))
-        return false;
-    }
-
-    boolean this_present_duration = true && this.isSetDuration();
-    boolean that_present_duration = true && that.isSetDuration();
-    if (this_present_duration || that_present_duration) {
-      if (!(this_present_duration && that_present_duration))
-        return false;
-      if (this.duration != that.duration)
         return false;
     }
 
@@ -434,16 +379,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
         return lastComparison;
       }
     }
-    lastComparison = Boolean.valueOf(isSetDuration()).compareTo(typedOther.isSetDuration());
-    if (lastComparison != 0) {
-      return lastComparison;
-    }
-    if (isSetDuration()) {
-      lastComparison = TBaseHelper.compareTo(this.duration, typedOther.duration);
-      if (lastComparison != 0) {
-        return lastComparison;
-      }
-    }
     return 0;
   }
 
@@ -457,7 +392,7 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
     while (true)
     {
       field = iprot.readFieldBegin();
-      if (field.type == TType.STOP) { 
+      if (field.type == TType.STOP) {
         break;
       }
       switch (field.id) {
@@ -465,14 +400,14 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
           if (field.type == TType.I64) {
             this.timestamp = iprot.readI64();
             setTimestampIsSet(true);
-          } else { 
+          } else {
             TProtocolUtil.skip(iprot, field.type);
           }
           break;
         case 2: // VALUE
           if (field.type == TType.STRING) {
             this.value = iprot.readString();
-          } else { 
+          } else {
             TProtocolUtil.skip(iprot, field.type);
           }
           break;
@@ -480,15 +415,7 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
           if (field.type == TType.STRUCT) {
             this.host = new Endpoint();
             this.host.read(iprot);
-          } else { 
-            TProtocolUtil.skip(iprot, field.type);
-          }
-          break;
-        case 4: // DURATION
-          if (field.type == TType.I32) {
-            this.duration = iprot.readI32();
-            setDurationIsSet(true);
-          } else { 
+          } else {
             TProtocolUtil.skip(iprot, field.type);
           }
           break;
@@ -522,11 +449,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
         oprot.writeFieldEnd();
       }
     }
-    if (isSetDuration()) {
-      oprot.writeFieldBegin(DURATION_FIELD_DESC);
-      oprot.writeI32(this.duration);
-      oprot.writeFieldEnd();
-    }
     oprot.writeFieldStop();
     oprot.writeStructEnd();
   }
@@ -555,12 +477,6 @@ public class Annotation implements TBase<Annotation, Annotation._Fields>, java.i
       } else {
         sb.append(this.host);
       }
-      first = false;
-    }
-    if (isSetDuration()) {
-      if (!first) sb.append(", ");
-      sb.append("duration:");
-      sb.append(this.duration);
       first = false;
     }
     sb.append(")");

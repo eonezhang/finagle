@@ -4,37 +4,43 @@ EXTERNAL_SOURCES = [
 ]
 
 scala_library(name='external',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-memcached-testutils',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-memcached'),
-    pants('util/util-collection'),
-    pants('util/util-core')
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'finagle/finagle-memcached',
+    'util/util-collection',
+    'util/util-core'
   ],
   sources=EXTERNAL_SOURCES
 )
 
 junit_tests(name='scala',
   dependencies=[
-    pants(':external'),
-    pants('3rdparty:junit'),
-    pants('3rdparty:mockito-all'),
-    pants('3rdparty:netty'),
-    pants('3rdparty:scalatest'),
-    pants('3rdparty:specs'),
-    pants('3rdparty/com/twitter/common:application-action'),
-    pants('3rdparty/com/twitter/common:service-thrift'),
-    pants('3rdparty/com/twitter/common:zookeeper-testing'),
-    pants('3rdparty/com/twitter/common/zookeeper:client'),
-    pants('3rdparty/com/twitter/common/zookeeper:server-set'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-memcached'),
-    pants('finagle/finagle-serversets'),
-    pants('util/util-core'),
-    pants('util/util-hashing')
+    ':external',
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/mockito:mockito-all',
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/scalacheck',
+    '3rdparty/jvm/org/scalatest',
+    'science/src/java/com/twitter/common/application:action',
+    'science/src/thrift/com/twitter/thrift:thrift-java',
+    'science/src/java/com/twitter/common/zookeeper:testing',
+    'science/src/java/com/twitter/common/zookeeper:client',
+    'science/src/java/com/twitter/common/zookeeper:server-set',
+    'finagle/finagle-core',
+    'finagle/finagle-memcached',
+    'finagle/finagle-serversets',
+    'util/util-core',
+    'util/util-hashing',
+    'util/util-zk-test'
   ],
-  sources=rglobs('*.scala') - EXTERNAL_SOURCES,
+  sources=rglobs('*.scala', exclude=[EXTERNAL_SOURCES]),
   resources=[
-    pants('finagle/finagle-memcached/src/test/resources')
+    'finagle/finagle-memcached/src/test/resources'
   ]
 )

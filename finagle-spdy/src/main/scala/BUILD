@@ -1,8 +1,14 @@
 scala_library(name='scala',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-spdy',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('util/util-core')
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'util/util-core'
   ],
-  sources=rglobs('*.scala')
+  fatal_warnings=True,
+  sources=rglobs('*.scala'),
 )

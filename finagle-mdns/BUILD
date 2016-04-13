@@ -1,13 +1,11 @@
-maven_layout()
-
-jar_library(name='finagle-mdns',
+target(name='finagle-mdns',
   dependencies=[
-    pants('finagle/finagle-mdns/src/main/scala')
+    'finagle/finagle-mdns/src/main/scala'
   ]
 )
 
-jar_library(name='tests',
+target(name='tests',
   dependencies=[
-    pants('finagle/finagle-mdns/src/test/scala')
+    'finagle/finagle-mdns/src/test/scala'
   ]
 )

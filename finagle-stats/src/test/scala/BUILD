@@ -1,10 +1,11 @@
 junit_tests(name='scala',
   dependencies=[
-    pants('3rdparty:junit'),
-    pants('3rdparty:mockito-all'),
-    pants('3rdparty:specs'),
-    pants('3rdparty/com/twitter/common:metrics'),
-    pants('finagle/finagle-stats')
+    '3rdparty/jvm/junit',
+    '3rdparty/jvm/org/scalacheck',
+    '3rdparty/jvm/org/scalatest',
+    'science/src/java/com/twitter/common/metrics:metrics',
+    'finagle/finagle-stats'
   ],
+  fatal_warnings=True,
   sources=rglobs('*.scala')
 )

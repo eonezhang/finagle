@@ -1,10 +1,19 @@
 scala_library(name='scala',
+  provides = scala_artifact(
+    org = 'com.twitter',
+    name = 'finagle-thrift',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('3rdparty:thrift-0.5.0'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-thrift/src/main/java'),
-    pants('util/util-core')
+    '3rdparty/jvm/io/netty',
+    '3rdparty/jvm/org/apache/thrift:thrift-0.5.0',
+    'finagle/finagle-core',
+    'finagle/finagle-thrift/src/main/java',
+    'scrooge/scrooge-core',
+    'util/util-core',
   ],
   sources=rglobs('*.scala'),
+  resources=[
+    'finagle/finagle-thrift/src/main/resources'
+  ],
 )

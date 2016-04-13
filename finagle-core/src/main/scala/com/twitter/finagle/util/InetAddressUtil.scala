@@ -5,6 +5,7 @@ import java.net.{InetAddress, Inet4Address}
 
 
 object InetAddressUtil {
+
   /** Check if string is an IPv4 private address. */
   def isPrivateAddress(ip: InetAddress): Boolean =
     ip match {

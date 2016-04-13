@@ -1,10 +1,31 @@
 java_library(name='java',
+  provides = artifact(
+    org = 'com.twitter',
+    name = 'finagle-example-java',
+    repo = artifactory,
+  ),
   dependencies=[
-    pants('3rdparty:netty'),
-    pants('finagle/finagle-core'),
-    pants('finagle/finagle-example/src/main/thrift:compiled'),
-    pants('finagle/finagle-kestrel'),
-    pants('util/util-core'),
+    '3rdparty/jvm/io/netty',
+    'finagle/finagle-core',
+    'finagle/finagle-example/src/main/thrift:thrift-scala',
+    'finagle/finagle-kestrel',
+    'finagle/finagle-thrift',
+    'util/util-core',
   ],
+  fatal_warnings=False,
   sources=rglobs('*.java')
+)
+
+jvm_binary(name='thrift-server',
+  main='com.twitter.finagle.example.java.thrift.ThriftServer',
+  dependencies=[
+    ':java'
+  ]
+)
+
+jvm_binary(name='thrift-client',
+  main='com.twitter.finagle.example.java.thrift.ThriftClient',
+  dependencies=[
+    ':java'
+  ]
 )
